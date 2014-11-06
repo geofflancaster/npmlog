@@ -1,3 +1,6 @@
+"use strict"
+var Progress = require("are-we-there-yet")
+var ProgressBar = require('./progress-bar.js')
 var EE = require('events').EventEmitter
 var log = exports = module.exports = new EE
 var util = require('util')
@@ -5,6 +8,8 @@ var util = require('util')
 var ansi = require('ansi')
 log.cursor = ansi(process.stderr)
 log.stream = process.stderr
+
+var bar = new ProgressBar(log.cursor)
 
 // by default, let ansi decide based on tty-ness.
 var colorEnabled = undefined
@@ -19,6 +24,48 @@ log.disableColor = function () {
 
 // default level
 log.level = 'info'
+log.progressEnabled = true
+log.enableProgress = function () {
+  this.progressEnabled = true
+  if (this._pause) return
+  this.tracker.on('change', this.showProgress)
+  this.showProgress()
+}
+
+log.disableProgress = function () {
+  this.clearProgress()
+  this.progressEnabled = false
+  this.tracker.removeListener('change', this.showProgress)
+}
+
+log.startSpinner = function () {
+  bar.startSpinner()
+}
+log.stopSpinner = function () {
+  bar.stopSpinner()
+}
+
+log.tracker = new Progress.TrackerGroup()
+
+log.newGroup = function (groupname) {
+  return this.tracker.newGroup()
+}
+
+log.newItem = function (itemname,todo) {
+  return itemname,this.tracker.newItem(todo)
+}
+
+log.clearProgress = function () {
+  if (!this.progressEnabled) return
+  bar.hide()
+}
+
+log.showProgress = function (name) {
+  if (!this.progressEnabled) return
+  var completed = this.tracker.completed()
+  if (completed===0 || Math.round(completed) == 1) return
+  bar.show(name, completed)
+}.bind(log)
 
 // temporarily stop emitting, but don't drop
 log.pause = function () {
@@ -34,6 +81,7 @@ log.resume = function () {
   b.forEach(function (m) {
     this.emitLog(m)
   }, this)
+  if (this.progressEnabled) this.enableProgress()
 }
 
 log._buffer = []
@@ -88,6 +136,7 @@ log.emitLog = function (m) {
     this._buffer.push(m)
     return
   }
+  if (this.progressEnabled) bar.pulse(m.prefix)
   var l = this.levels[m.level]
   if (l === undefined) return
   if (l < this.levels[this.level]) return
@@ -95,6 +144,7 @@ log.emitLog = function (m) {
 
   var style = log.style[m.level]
   var disp = log.disp[m.level] || m.level
+  this.clearProgress()
   m.message.split(/\r?\n/).forEach(function (line) {
     if (this.heading) {
       this.write(this.heading, this.headingStyle)
@@ -106,6 +156,8 @@ log.emitLog = function (m) {
     this.write(p, this.prefixStyle)
     this.write(' ' + line + '\n')
   }, this)
+  this.clearProgress()
+  this.showProgress()
 }
 
 log.write = function (msg, style) {
