@@ -47,13 +47,39 @@ log.stopSpinner = function () {
 
 log.tracker = new Progress.TrackerGroup()
 
-log.newGroup = function (groupname) {
-  return this.tracker.newGroup()
+// This all allows trackers returned by newGroup, newItem and newStream to
+// be used as log objects.
+var blessNewTracker = function (tracker, func) {
+  if (func) {
+    func = tracker[func]
+    return function () {
+      return this.bless(func.apply(tracker, arguments))
+    }
+  }
+  else {
+    func = tracker
+    return function () {
+      return this.bless(this.tracker[func].apply(this.tracker, arguments))
+    }
+  }
 }
 
-log.newItem = function (itemname,todo) {
-  return itemname,this.tracker.newItem(todo)
+log.bless = function (tracker) {
+  Object.keys(log.levels).forEach(function(level){
+    tracker[level] = function (section, style,disp) {
+      log[level].call(log, section, style, disp)
+    }
+  })
+  tracker.newGroup = blessNewTracker(tracker, 'newGroup')
+  tracker.newItem = blessNewTracker(tracker, 'newItem')
+  tracker.newStream = blessNewTracker(tracker, 'newStream')
+  tracker.bless = log.bless
+  return tracker
 }
+
+log.newGroup = blessNewTracker('newGroup')
+log.newItem = blessNewTracker('newItem')
+log.newStream = blessNewTracker('newStream')
 
 log.clearProgress = function () {
   if (!this.progressEnabled) return
